@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, List
 from sqlalchemy import String, DateTime, JSON, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
+
+if TYPE_CHECKING:
+    from .project_share import ProjectShare
 
 
 class Project(Base):
@@ -29,6 +33,9 @@ class Project(Base):
     )
 
     owner: Mapped["User"] = relationship("User", back_populates="projects")  # type: ignore[name-defined]
+    shares: Mapped[List["ProjectShare"]] = relationship(
+        "ProjectShare", back_populates="project", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Project {self.id} name={self.name!r} owner={self.owner_id}>"
