@@ -6,7 +6,7 @@ standalone JWT validator. It:
   1. Fetches the JWKS from Authentik's discovery endpoint (cached)
   2. Validates the Bearer token signature and claims
   3. Upserts the user into the local DB using sub + email from the token
-     so the rest of the app (project ownership, audit) works unchanged
+  4. Syncs role from the 'groups' claim on every login (B2.c)
 
 The JWKS is fetched once at startup and cached. Call refresh_jwks()
 to force a reload (e.g. after Authentik key rotation).
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.user import User
 from app.auth.password import hash_password
+from app.auth.roles import role_from_groups
 
 
 @lru_cache(maxsize=1)
@@ -48,39 +49,52 @@ def _decode_oidc_token(token: str) -> dict:
             jwks,
             algorithms=["RS256"],
             issuer=settings.authentik_issuer.rstrip("/"),
-            options={"verify_aud": False},  # audience varies by app setup
+            options={"verify_aud": False},
         )
     except JWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid OIDC token: {exc}")
 
 
 def get_or_create_user_from_token(token: str, db: Session) -> User:
-    """Validate token, upsert user, return User ORM object."""
+    """Validate token, upsert user (with role sync), return User ORM object."""
     payload = _decode_oidc_token(token)
 
     sub: str = payload.get("sub", "")
     email: str = payload.get("email", "")
     name: str = payload.get("name") or payload.get("preferred_username") or email.split("@")[0]
+    # Authentik sends groups as a list of group names via the custom scope mapping.
+    groups: list[str] = payload.get("groups", [])
+    derived_role = role_from_groups(groups)
 
     if not sub or not email:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing sub or email")
 
-    # Use sub as the stable user ID (Authentik's UUID for this user)
     user = db.get(User, sub)
     if user is None:
-        # First login — provision the user locally
         user = User(
             id=sub,
             email=email,
             hashed_password=hash_password(sub),  # unusable placeholder — login is via OIDC
             display_name=name,
-            role="user",
+            role=derived_role,
             is_active=True,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    elif not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+    else:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+        # Sync role and display_name on every login so group changes propagate.
+        changed = False
+        if user.role != derived_role:
+            user.role = derived_role
+            changed = True
+        if user.display_name != name:
+            user.display_name = name
+            changed = True
+        if changed:
+            db.commit()
+            db.refresh(user)
 
     return user

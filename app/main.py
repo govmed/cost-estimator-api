@@ -7,6 +7,7 @@ from .api.projects import router as projects_router
 from .api.shares import router as shares_router
 from .api.audit import router as audit_router
 from .api.transitions import router as transitions_router
+from .api.users import router as users_router
 
 app = FastAPI(
     title="SOW Cost Calculator API",
@@ -30,6 +31,7 @@ app.include_router(projects_router)
 app.include_router(shares_router)
 app.include_router(audit_router)
 app.include_router(transitions_router)
+app.include_router(users_router)
 
 
 @app.get("/health", tags=["ops"])
