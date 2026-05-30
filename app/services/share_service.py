@@ -7,6 +7,7 @@ from app.models.project_share import ProjectShare
 from app.models.user import User
 from app.schemas.share import ShareCreate, ShareRead, VALID_ACCESS_LEVELS
 from app.services.user_service import get_by_email
+from app.services.audit_service import append_audit
 
 
 def _require_owner(project: Project, user_id: str) -> None:
@@ -62,6 +63,13 @@ def create_share(db: Session, project_id: str, data: ShareCreate, owner_id: str)
         access_level=data.access_level,
     )
     db.add(share)
+    append_audit(
+        db,
+        project_id=project_id,
+        user_id=owner_id,
+        action_kind="share.grant",
+        action_data={"to_user_id": target.id, "to_email": target.email, "access_level": data.access_level},
+    )
     try:
         db.commit()
     except IntegrityError:
@@ -91,5 +99,12 @@ def delete_share(db: Session, project_id: str, user_id: str, owner_id: str) -> N
     )
     if not share:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+    append_audit(
+        db,
+        project_id=project_id,
+        user_id=owner_id,
+        action_kind="share.revoke",
+        action_data={"revoked_user_id": user_id},
+    )
     db.delete(share)
     db.commit()

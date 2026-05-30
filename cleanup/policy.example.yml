@@ -1,0 +1,14 @@
+# Retention policy examples.
+# Copy to policy.yml and edit before running.
+#
+# Run:  python cleanup/run.py --policy cleanup/policy.yml
+# Safe: python cleanup/run.py --policy cleanup/policy.yml --dry-run
+
+policies:
+  - name: "Delete archived projects older than 90 days"
+    status: [archived]
+    older_than_days: 90
+
+  - name: "Delete stale drafts older than 180 days"
+    status: [draft]
+    older_than_days: 180

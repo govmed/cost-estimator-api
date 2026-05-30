@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from app.models.project import Project
 from app.models.project_share import ProjectShare
 from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.services.audit_service import append_audit
 
 VALID_STATUSES = {"draft", "underReview", "approved", "archived"}
 
@@ -23,7 +24,6 @@ def _access_level(db: Session, project: Project, user_id: str) -> str | None:
 
 
 def list_projects(db: Session, owner_id: str) -> list[Project]:
-    """Return all projects the user owns or has been shared with."""
     shared_ids = (
         db.query(ProjectShare.project_id)
         .filter(ProjectShare.user_id == owner_id)
@@ -58,6 +58,13 @@ def create_project(db: Session, data: ProjectCreate, owner_id: str) -> Project:
         state_json={"project": data.project, "scenarios": data.scenarios},
     )
     db.add(project)
+    append_audit(
+        db,
+        project_id=project_id,
+        user_id=owner_id,
+        action_kind="project.create",
+        action_data={"name": project.name, "client": project.client, "engagementType": proj_data.get("engagementType")},
+    )
     db.commit()
     db.refresh(project)
     return project
@@ -74,24 +81,41 @@ def update_project(db: Session, project_id: str, data: ProjectUpdate, user_id: s
     if level == "read":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only access")
 
+    changes: dict = {}
+
     if data.status is not None:
         if data.status not in VALID_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid status. Must be one of: {sorted(VALID_STATUSES)}",
             )
+        if data.status != project.status:
+            changes["status"] = {"before": project.status, "after": data.status}
         project.status = data.status
 
     current = dict(project.state_json)
     if data.project is not None:
+        if data.project.get("name") != project.name:
+            changes["name"] = {"before": project.name, "after": data.project.get("name")}
         current["project"] = data.project
         project.name = data.project.get("name", project.name)
         project.client = data.project.get("client", project.client)
     if data.scenarios is not None:
+        changes["scenarios_updated"] = True
         current["scenarios"] = data.scenarios
 
     project.state_json = current
     project.updated_at = datetime.now(timezone.utc)
+
+    if changes:
+        append_audit(
+            db,
+            project_id=project_id,
+            user_id=user_id,
+            action_kind="project.update",
+            action_data={"changes": changes},
+        )
+
     db.commit()
     db.refresh(project)
     return project
@@ -103,5 +127,14 @@ def delete_project(db: Session, project_id: str, user_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if project.owner_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can delete a project")
+    # Audit entry written before delete (CASCADE will remove it, but it's recorded in the response)
+    append_audit(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        action_kind="project.delete",
+        action_data={"name": project.name},
+    )
+    db.commit()
     db.delete(project)
     db.commit()
