@@ -1,8 +1,12 @@
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, List
 from sqlalchemy import String, Boolean, DateTime, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
+
+if TYPE_CHECKING:
+    from .project import Project
 
 
 class User(Base):
@@ -24,6 +28,10 @@ class User(Base):
         server_default=func.now(),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+
+    projects: Mapped[List["Project"]] = relationship(
+        "Project", back_populates="owner", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

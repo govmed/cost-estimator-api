@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .db import check_db_connection
 from .api.auth import router as auth_router
+from .api.projects import router as projects_router
 
 app = FastAPI(
     title="SOW Cost Calculator API",
@@ -22,6 +23,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(projects_router)
 
 
 @app.get("/health", tags=["ops"])
