@@ -1,4 +1,6 @@
 services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -16,6 +18,81 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Authentik — Redis cache (required by Authentik) ───────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Authentik — dedicated Postgres database ───────────────────────────────
+  authentik-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentikdevpass}
+    volumes:
+      - authentik_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Authentik — server (UI + API + OIDC endpoints) ────────────────────────
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.12.3
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentikdevpass}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-dev-secret-change-in-production}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+    ports:
+      - "9000:9000"   # HTTP  → http://localhost:9000
+      - "9443:9443"   # HTTPS → https://localhost:9443
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Authentik — worker (background tasks) ─────────────────────────────────
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.12.3
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-db
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:-authentikdevpass}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-authentik-dev-secret-change-in-production}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── FastAPI ───────────────────────────────────────────────────────────────
   api:
     build: .
     restart: unless-stopped
@@ -26,6 +103,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://sow_calc:${POSTGRES_PASSWORD:-devpassword}@db:5432/sow_calc
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
       AUTH_MODE: ${AUTH_MODE:-standalone}
+      AUTHENTIK_ISSUER: ${AUTHENTIK_ISSUER:-http://authentik-server:9000/application/o/cost-estimator/}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     ports:
       - "8000:8000"
@@ -35,3 +113,6 @@ services:
 
 volumes:
   pgdata:
+  authentik_pgdata:
+  authentik_media:
+  authentik_custom_templates:
