@@ -4,5 +4,10 @@ from .project_share import ProjectShare  # noqa: F401
 from .audit_entry import AuditEntry  # noqa: F401
 from .rate_card import RateCard  # noqa: F401
 from .project_template import ProjectTemplate  # noqa: F401
+from .comment import Comment  # noqa: F401
+from .webhook import Webhook  # noqa: F401
 
-__all__ = ["User", "Project", "ProjectShare", "AuditEntry", "RateCard", "ProjectTemplate"]
+__all__ = [
+    "User", "Project", "ProjectShare", "AuditEntry",
+    "RateCard", "ProjectTemplate", "Comment", "Webhook",
+]

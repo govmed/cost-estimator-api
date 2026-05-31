@@ -16,6 +16,8 @@ from .api.users import router as users_router
 from .api.pricing import router as pricing_router
 from .api.rate_cards import router as rate_cards_router
 from .api.templates import router as templates_router
+from .api.comments import router as comments_router
+from .api.webhooks import router as webhooks_router
 
 
 @asynccontextmanager
@@ -60,6 +62,8 @@ app.include_router(users_router)
 app.include_router(pricing_router)
 app.include_router(rate_cards_router)
 app.include_router(templates_router)
+app.include_router(comments_router)
+app.include_router(webhooks_router)
 
 
 # ── Ops ───────────────────────────────────────────────────────────────────────
