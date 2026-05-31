@@ -7,6 +7,7 @@ from app.models.project import Project
 from app.models.project_share import ProjectShare
 from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.services.audit_service import append_audit
+from app.schemas.validation import validate_project_blob
 
 VALID_STATUSES = {"draft", "underReview", "approved", "archived"}
 
@@ -47,6 +48,7 @@ def get_project(db: Session, project_id: str, user_id: str) -> Project:
 
 
 def create_project(db: Session, data: ProjectCreate, owner_id: str) -> Project:
+    validate_project_blob({"project": data.project, "scenarios": data.scenarios})
     proj_data = data.project
     project_id = proj_data.get("id") or str(uuid.uuid4())
     project = Project(
@@ -94,6 +96,13 @@ def update_project(db: Session, project_id: str, data: ProjectUpdate, user_id: s
         project.status = data.status
 
     current = dict(project.state_json)
+    if data.project is not None or data.scenarios is not None:
+        preview = {
+            "project": data.project if data.project is not None else current.get("project", {}),
+            "scenarios": data.scenarios if data.scenarios is not None else current.get("scenarios", []),
+        }
+        validate_project_blob(preview)
+
     if data.project is not None:
         if data.project.get("name") != project.name:
             changes["name"] = {"before": project.name, "after": data.project.get("name")}
