@@ -14,6 +14,8 @@ from .api.audit import router as audit_router
 from .api.transitions import router as transitions_router
 from .api.users import router as users_router
 from .api.pricing import router as pricing_router
+from .api.rate_cards import router as rate_cards_router
+from .api.templates import router as templates_router
 
 
 @asynccontextmanager
@@ -56,6 +58,8 @@ app.include_router(audit_router)
 app.include_router(transitions_router)
 app.include_router(users_router)
 app.include_router(pricing_router)
+app.include_router(rate_cards_router)
+app.include_router(templates_router)
 
 
 # ── Ops ───────────────────────────────────────────────────────────────────────
